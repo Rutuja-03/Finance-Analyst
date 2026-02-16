@@ -1,8 +1,10 @@
 """
 Finance CSV Analyzer - Trade-based. No database, in-memory only.
 Columns: Trade #, Type, Date and time, Signal, Price INR, Net P&L INR, Cumulative P&L INR.
-Two rows = one trade (entry + exit). Win = Net P&L > 0, Loss = Net P&L < 0.
-Total trades, total wins, total losses — monthly and yearly.
+Two rows = one trade (entry + exit). Per completed trade:
+  Win      = Net P&L > 0  (even +0.01 counts as win)
+  Loss     = Net P&L < 0  (even -0.01 counts as loss)
+  Breakeven = Net P&L == 0 (not counted as win or loss; treated separately)
 """
 
 import pandas as pd
@@ -160,9 +162,11 @@ def collapse_trades(df_sorted: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(rows)
     if out.empty:
         return out
+    # Win = Net P&L > 0, Loss = Net P&L < 0, Breakeven = 0 (not counted as win or loss)
     out["_win"] = out["_net_pnl"] > 0
     out["_loss"] = out["_net_pnl"] < 0
-    out["W&L"] = out["_win"].astype(int)  # 1 = win, 0 = loss
+    out["_breakeven"] = out["_net_pnl"] == 0
+    out["W&L"] = out["_net_pnl"].apply(lambda x: 1 if x > 0 else (0 if x < 0 else "BE"))
     return out
 
 
@@ -170,7 +174,7 @@ def _find_streaks(collapsed_df: pd.DataFrame) -> dict:
     """Longest win streak and longest loss streak with date ranges. Trades in date order."""
     if collapsed_df.empty or "_date" not in collapsed_df.columns or "_win" not in collapsed_df.columns:
         return {
-            "total_trades": 0, "total_wins": 0, "total_losses": 0,
+            "total_trades": 0, "total_wins": 0, "total_losses": 0, "total_breakeven": 0,
             "longest_win_streak": 0, "longest_win_from": None, "longest_win_to": None,
             "longest_loss_streak": 0, "longest_loss_from": None, "longest_loss_to": None,
         }
@@ -178,6 +182,7 @@ def _find_streaks(collapsed_df: pd.DataFrame) -> dict:
     total_trades = len(df)
     total_wins = int(df["_win"].sum())
     total_losses = int(df["_loss"].sum())
+    total_breakeven = int(df["_breakeven"].sum()) if "_breakeven" in df.columns else 0
     # Longest win streak
     best_win_len, best_win_start, best_win_end = 0, None, None
     cur_start, cur_len = None, 0
@@ -214,6 +219,7 @@ def _find_streaks(collapsed_df: pd.DataFrame) -> dict:
         "total_trades": total_trades,
         "total_wins": total_wins,
         "total_losses": total_losses,
+        "total_breakeven": total_breakeven,
         "longest_win_streak": best_win_len,
         "longest_win_from": best_win_start,
         "longest_win_to": best_win_end,
@@ -228,10 +234,14 @@ def overall_stats(collapsed_df: pd.DataFrame) -> dict:
     return _find_streaks(collapsed_df)
 
 
-def trades_yearly(collapsed_df: pd.DataFrame) -> pd.DataFrame:
-    """Total trades, total wins, total losses per year. Expects collapsed table (one row per trade)."""
+def trades_yearly(
+    collapsed_df: pd.DataFrame,
+    win_value: float = 1625,
+    loss_value: float = 650,
+) -> pd.DataFrame:
+    """Total trades, total wins, total losses, net_profit per year. net_profit = (wins * win_value) - (losses * loss_value)."""
     if collapsed_df.empty or "_date" not in collapsed_df.columns:
-        return pd.DataFrame(columns=["year", "total_trades", "total_wins", "total_losses"])
+        return pd.DataFrame(columns=["year", "total_trades", "total_wins", "total_losses", "net_profit"])
     df = collapsed_df.copy()
     df["year"] = df["_date"].dt.year
     out = df.groupby("year").agg(
@@ -241,20 +251,25 @@ def trades_yearly(collapsed_df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     out["total_wins"] = out["total_wins"].astype(int)
     out["total_losses"] = out["total_losses"].astype(int)
-    out["net_profit"] = (out["total_wins"] * 1625) - (out["total_losses"] * 650)
+    out["net_profit"] = (out["total_wins"] * win_value) - (out["total_losses"] * loss_value)
     return out
 
 
-def trades_monthly(collapsed_df: pd.DataFrame, year: Optional[int] = None) -> pd.DataFrame:
-    """Total trades, total wins, total losses per month. Expects collapsed table. If year set, only that year."""
+def trades_monthly(
+    collapsed_df: pd.DataFrame,
+    year: Optional[int] = None,
+    win_value: float = 1625,
+    loss_value: float = 650,
+) -> pd.DataFrame:
+    """Total trades, total wins, total losses, net_profit per month. net_profit = (wins * win_value) - (losses * loss_value). If year set, only that year."""
     if collapsed_df.empty or "_date" not in collapsed_df.columns:
-        return pd.DataFrame(columns=["year_month", "total_trades", "total_wins", "total_losses"])
+        return pd.DataFrame(columns=["year_month", "total_trades", "total_wins", "total_losses", "net_profit"])
     df = collapsed_df.copy()
     df["year_month"] = df["_date"].dt.to_period("M").astype(str)
     if year is not None:
         df = df[df["_date"].dt.year == year]
     if df.empty:
-        return pd.DataFrame(columns=["year_month", "total_trades", "total_wins", "total_losses"])
+        return pd.DataFrame(columns=["year_month", "total_trades", "total_wins", "total_losses", "net_profit"])
     out = df.groupby("year_month").agg(
         total_trades=("Trade #", "count"),
         total_wins=("_win", "sum"),
@@ -262,5 +277,5 @@ def trades_monthly(collapsed_df: pd.DataFrame, year: Optional[int] = None) -> pd
     ).reset_index()
     out["total_wins"] = out["total_wins"].astype(int)
     out["total_losses"] = out["total_losses"].astype(int)
-    out["net_profit"] = (out["total_wins"] * 1625) - (out["total_losses"] * 650)
+    out["net_profit"] = (out["total_wins"] * win_value) - (out["total_losses"] * loss_value)
     return out

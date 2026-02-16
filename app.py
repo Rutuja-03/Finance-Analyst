@@ -21,6 +21,11 @@ with st.sidebar:
         help="Columns: Trade #, Type, Date and time, Net P&L INR",
     )
     st.divider()
+    st.header("Net profit formula")
+    st.markdown("**net_profit** = (wins × win value) − (losses × loss value)")
+    win_value = st.number_input("Win value (per win)", value=1625, min_value=0, step=1, format="%d")
+    loss_value = st.number_input("Loss value (per loss)", value=650, min_value=0, step=1, format="%d")
+    st.divider()
     st.markdown("**Expected columns**")
     st.markdown("- **Trade #** – trade id (entry + exit = one trade)")
     st.markdown("- **Type** – e.g. Entry short, Exit short")
@@ -65,13 +70,13 @@ def _fmt(d):
         return d.strftime("%d-%m-%Y")
     return str(d)
 
-st.markdown(f"**Total trades:** {stats['total_trades']}  \n**Total wins:** {stats['total_wins']}  \n**Total loss:** {stats['total_losses']}")
+st.markdown(f"**Total trades:** {stats['total_trades']}  \n**Total wins:** {stats['total_wins']}  \n**Total loss:** {stats['total_losses']}  \n**Total breakeven:** {stats.get('total_breakeven', 0)} (Net P&L = 0; not counted as win or loss)")
 st.markdown(f"**Longest streak of wins:** {stats['longest_win_streak']} (from {_fmt(stats['longest_win_from'])} to {_fmt(stats['longest_win_to'])})")
 st.markdown(f"**Longest streak of loss:** {stats['longest_loss_streak']} (from {_fmt(stats['longest_loss_from'])} to {_fmt(stats['longest_loss_to'])})")
 
 # ---- Step 3: Yearly / Monthly tables ----
 st.subheader("3. Yearly — Total trades, Wins, Losses")
-yearly = trades_yearly(collapsed)
+yearly = trades_yearly(collapsed, win_value=win_value, loss_value=loss_value)
 if yearly.empty:
     st.info("No trade data for yearly summary.")
 else:
@@ -93,7 +98,7 @@ st.subheader("4. Monthly — Total trades, Wins, Losses (select year)")
 if not yearly.empty:
     year_options = sorted(yearly["year"].astype(int).tolist())
     selected_year = st.selectbox("Select year", options=year_options, index=len(year_options) - 1)
-    monthly = trades_monthly(collapsed, year=selected_year)
+    monthly = trades_monthly(collapsed, year=selected_year, win_value=win_value, loss_value=loss_value)
     if monthly.empty:
         st.info(f"No data for year {selected_year}.")
     else:
