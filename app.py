@@ -92,6 +92,10 @@ else:
     )
     fig_y.update_layout(height=360, margin=dict(l=0, r=0, t=30, b=0))
     st.plotly_chart(fig_y, use_container_width=True)
+    fig_y_line = px.line(yearly, x="year", y="net_profit", title="Net profit by year")
+    fig_y_line.update_layout(height=360, margin=dict(l=0, r=0, t=30, b=0))
+    fig_y_line.add_hline(y=0, line_dash="dash", line_color="gray")
+    st.plotly_chart(fig_y_line, use_container_width=True)
 
 # ---- Monthly: year dropdown ----
 st.subheader("4. Monthly — Total trades, Wins, Losses (select year)")
@@ -114,6 +118,10 @@ if not yearly.empty:
         )
         fig_m.update_layout(height=360, margin=dict(l=0, r=0, t=30, b=0), xaxis_tickangle=-45)
         st.plotly_chart(fig_m, use_container_width=True)
+        fig_m_line = px.line(monthly, x="year_month", y="net_profit", title=f"Net profit by month — {selected_year}")
+        fig_m_line.update_layout(height=360, margin=dict(l=0, r=0, t=30, b=0), xaxis_tickangle=-45)
+        fig_m_line.add_hline(y=0, line_dash="dash", line_color="gray")
+        st.plotly_chart(fig_m_line, use_container_width=True)
 else:
     st.info("No yearly data; cannot show monthly.")
 
