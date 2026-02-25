@@ -251,7 +251,9 @@ def trades_yearly(
     ).reset_index()
     out["total_wins"] = out["total_wins"].astype(int)
     out["total_losses"] = out["total_losses"].astype(int)
-    out["net_profit"] = (out["total_wins"] * win_value) - (out["total_losses"] * loss_value)
+    out["profit"] = out["total_wins"] * win_value
+    out["loss"] = out["total_losses"] * loss_value
+    out["net_profit"] = out["profit"] - out["loss"]
     return out
 
 
@@ -277,5 +279,76 @@ def trades_monthly(
     ).reset_index()
     out["total_wins"] = out["total_wins"].astype(int)
     out["total_losses"] = out["total_losses"].astype(int)
-    out["net_profit"] = (out["total_wins"] * win_value) - (out["total_losses"] * loss_value)
+    out["profit"] = out["total_wins"] * win_value
+    out["loss"] = out["total_losses"] * loss_value
+    out["net_profit"] = out["profit"] - out["loss"]
+    return out
+
+
+def performance_metrics(
+    collapsed_df: pd.DataFrame,
+    yearly_df: pd.DataFrame,
+    monthly_all_df: pd.DataFrame,
+    initial_capital: float,
+    win_value: float,
+    loss_value: float,
+) -> dict:
+    """
+    All metrics derived from yearly net profit (formula-based).
+    Sharpe, Sortino, drawdown, profit factor, returns, volatility, etc.
+    """
+    out = {
+        "total_trades": 0, "total_wins": 0, "total_losses": 0, "win_rate_pct": 0.0,
+        "profit_factor": 0.0, "expectancy": 0.0, "total_net_profit": 0.0,
+        "avg_yearly_return_pct": 0.0, "avg_monthly_return_pct": 0.0,
+        "volatility_yearly_pct": 0.0, "volatility_monthly_pct": 0.0,
+        "sharpe_ratio": 0.0, "sortino_ratio": 0.0,
+        "max_drawdown_pct": 0.0, "calmar_ratio": 0.0,
+    }
+    if collapsed_df.empty:
+        return out
+    n = len(collapsed_df)
+    out["total_trades"] = n
+    out["total_wins"] = int(collapsed_df["_win"].sum())
+    out["total_losses"] = int(collapsed_df["_loss"].sum())
+    out["win_rate_pct"] = (out["total_wins"] / n * 100) if n else 0
+    out["total_net_profit"] = float(yearly_df["net_profit"].sum()) if not yearly_df.empty else 0
+
+    if not yearly_df.empty and len(yearly_df) >= 1:
+        ys = yearly_df.sort_values("year").reset_index(drop=True)
+        # Profit factor = gross profit / gross loss (from yearly profit & loss columns)
+        gross_profit = float(ys["profit"].sum())
+        gross_loss = float(ys["loss"].sum())
+        if gross_loss > 0:
+            out["profit_factor"] = gross_profit / gross_loss
+        else:
+            out["profit_factor"] = float("inf") if gross_profit > 0 else 0
+        out["expectancy"] = float(np.mean(ys["net_profit"].values))
+
+        # Avg yearly return % = (avg yearly net profit / initial capital) * 100
+        out["avg_yearly_return_pct"] = (float(np.mean(ys["net_profit"])) / initial_capital * 100) if initial_capital else 0
+
+        cap = initial_capital + ys["net_profit"].cumsum()
+        cap_prev = np.concatenate([[initial_capital], cap.values[:-1]])
+        yearly_ret = (cap.values - cap_prev) / cap_prev
+        vol_y = np.std(yearly_ret)
+        out["volatility_yearly_pct"] = float(vol_y) * 100
+        if vol_y > 0:
+            out["sharpe_ratio"] = float(np.mean(yearly_ret) / vol_y)
+        dr_ret = yearly_ret[yearly_ret < 0]
+        if len(dr_ret) > 0:
+            dd_std = np.std(dr_ret)
+            if dd_std > 0:
+                out["sortino_ratio"] = float(np.mean(yearly_ret) / dd_std)
+        peak = np.maximum.accumulate(cap.values)
+        dd = (peak - cap.values) / np.where(peak > 0, peak, 1)
+        out["max_drawdown_pct"] = float(np.max(dd)) * 100
+        if out["max_drawdown_pct"] > 0:
+            out["calmar_ratio"] = (out["avg_yearly_return_pct"] / 100) / (out["max_drawdown_pct"] / 100)
+        # Avg monthly return % from initial capital (use monthly data if available, else yearly/12)
+        if not monthly_all_df.empty and len(monthly_all_df) >= 1 and initial_capital:
+            out["avg_monthly_return_pct"] = float(monthly_all_df["net_profit"].mean()) / initial_capital * 100
+        else:
+            out["avg_monthly_return_pct"] = out["avg_yearly_return_pct"] / 12
+        out["volatility_monthly_pct"] = out["volatility_yearly_pct"] / (12 ** 0.5)
     return out

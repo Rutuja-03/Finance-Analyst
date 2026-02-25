@@ -38,7 +38,7 @@ Your CSV should have these columns (names can vary slightly):
    **macOS / Linux:**
    ```bash
    python3 -m venv venv
-   source venv/bin/activate
+   source venv/bin/activate OR venv\Scripts\Activate.ps1 
    ```
 
    (If `python` is not found, try `py -m venv venv` on Windows.)
